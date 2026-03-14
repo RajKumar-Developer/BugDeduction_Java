@@ -1,0 +1,684 @@
+import javalang
+import networkx as nx
+import matplotlib.pyplot as plt
+
+def java_to_ast(java_code):
+    tokens = javalang.tokenizer.tokenize(java_code)
+    parser = javalang.parser.Parser(tokens)
+    tree = parser.parse()
+    return tree
+
+def get_node_label(node):
+    if isinstance(node, javalang.tree.VariableDeclarator):
+        initializer = get_node_label(node.initializer) if node.initializer else "None"
+        return f"Variable: {node.name}, Init: {initializer}"
+    elif isinstance(node, javalang.tree.LocalVariableDeclaration):
+        return "Local Variable Declaration"
+    elif isinstance(node, javalang.tree.MethodDeclaration):
+        return_type = node.return_type.name if node.return_type else "void"
+        return f"Method: {node.name}, Return Type: {return_type}"
+    elif isinstance(node, javalang.tree.ClassDeclaration):
+        return f"Class: {node.name}"
+    elif isinstance(node, javalang.tree.FormalParameter):
+        param_type = node.type.name if node.type else 'Unknown'
+        return f"Parameter: {node.name}, Type: {param_type}"
+    elif isinstance(node, javalang.tree.Literal):
+        return f"Literal: {node.value}"
+    elif isinstance(node, javalang.tree.BinaryOperation):
+        left_operand = get_node_label(node.operandl) if node.operandl else "None"
+        right_operand = get_node_label(node.operandr) if node.operandr else "None"
+        return f"BinaryOperation({node.operator}, {left_operand}, {right_operand})"
+    elif isinstance(node, javalang.tree.IfStatement):
+        return "If Statement"
+    elif isinstance(node, javalang.tree.ForStatement):
+        return "For Loop"
+    elif isinstance(node, javalang.tree.StatementExpression):
+        return "Statement Expression"
+    elif isinstance(node, javalang.tokenizer.Keyword):
+        return f"Keyword: {node.value}"
+    elif isinstance(node, javalang.tokenizer.Identifier):
+        return f"Identifier: {node.value}"
+    elif isinstance(node, javalang.tokenizer.Operator):
+        return f"Operator: {node.value}"
+    elif isinstance(node, javalang.tokenizer.Literal):
+        return f"Literal: {node.value}"
+    elif isinstance(node, javalang.tokenizer.Separator):
+        return f"Delimiter: {node.value}"
+    else:
+        return str(type(node).__name__)
+
+def visualize_ast(node, graph, parent=None):
+    node_id = str(id(node))
+    label = get_node_label(node)
+    graph.add_node(node_id, label=label)
+
+    if parent:
+        graph.add_edge(parent, node_id)
+
+    if isinstance(node, javalang.tree.Node):
+        for child in node.children:
+            if isinstance(child, javalang.tree.Node):
+                visualize_ast(child, graph, node_id)
+            elif isinstance(child, list):
+                for list_item in child:
+                    if isinstance(list_item, javalang.tree.Node):
+                        visualize_ast(list_item, graph, node_id)
+
+def draw_graph(graph):
+    fig, ax = plt.subplots(figsize=(30, 8)) 
+    pos = nx.nx_agraph.graphviz_layout(graph, prog='dot')  
+    labels = nx.get_node_attributes(graph, 'label')
+    nx.draw(graph, pos, labels=labels, with_labels=True, node_size=2000, node_color='white', 
+            font_size=10, font_color='black', font_weight='bold', arrows=True, ax=ax)
+    plt.show()
+
+def main():
+    java_code = """
+    public class Calculator {
+        public static void main(String[] args) {
+           int sum = 10 + 20;
+           System.out.println("Sum: " + sum);
+        }
+    }
+    """
+    
+    ast = java_to_ast(java_code)
+    graph = nx.DiGraph()
+    visualize_ast(ast, graph)
+    draw_graph(graph)
+
+if __name__ == "__main__":
+    main()
+
+-------------------------------------------------------------------------------------------------------------
+import javalang
+import networkx as nx
+import matplotlib.pyplot as plt
+
+def java_to_ast(java_code):
+    tokens = javalang.tokenizer.tokenize(java_code)
+    parser = javalang.parser.Parser(tokens)
+    tree = parser.parse()
+    return tree
+
+def get_statement_label(statement):
+    if isinstance(statement, javalang.tree.VariableDeclarator):
+        return f"Variable: {statement.name}"
+    elif isinstance(statement, javalang.tree.BinaryOperation):
+        return f"Binary Operation: {statement.operator}"
+    elif isinstance(statement, javalang.tree.IfStatement):
+        return "If Condition"
+    elif isinstance(statement, javalang.tree.ForStatement):
+        return "For Loop"
+    elif isinstance(statement, javalang.tree.WhileStatement):
+        return "While Loop"
+    elif isinstance(statement, javalang.tree.MethodInvocation):
+        return f"Method Call: {statement.member}"
+    elif isinstance(statement, javalang.tree.Literal):
+        return f"Literal: {statement.value}"
+    elif isinstance(statement, javalang.tree.StatementExpression):
+        return "Statement Expression"
+    else:
+        return type(statement).__name__  
+
+def construct_cfg(method_node, graph, parent=None, block_id=0):
+    block_label = f"Block_{block_id}"
+    graph.add_node(block_label, label=f"Method Start: {method_node.name}")
+    
+    if parent:
+        graph.add_edge(parent, block_label)
+    
+    current_block = block_label
+    block_id += 1
+
+    for statement in method_node.body:
+        if isinstance(statement, javalang.tree.IfStatement):
+            condition_block = f"Condition_{block_id}"
+            true_block = f"TrueBranch_{block_id}"
+            false_block = f"FalseBranch_{block_id}"
+            
+            graph.add_node(condition_block, label=get_statement_label(statement))
+            graph.add_node(true_block, label="True Branch")
+            graph.add_node(false_block, label="False Branch")
+            
+            graph.add_edge(current_block, condition_block)
+            graph.add_edge(condition_block, true_block)
+            graph.add_edge(condition_block, false_block)
+            
+            current_block = condition_block
+            block_id += 1
+        elif isinstance(statement, javalang.tree.ForStatement):
+            loop_start = f"LoopStart_{block_id}"
+            loop_end = f"LoopEnd_{block_id}"
+            
+            graph.add_node(loop_start, label="For Loop Start")
+            graph.add_node(loop_end, label="For Loop End")
+            
+            graph.add_edge(current_block, loop_start)
+            graph.add_edge(loop_start, loop_end)
+            graph.add_edge(loop_end, loop_start)  
+            
+            current_block = loop_end
+            block_id += 1
+        elif isinstance(statement, javalang.tree.WhileStatement):
+            while_start = f"WhileStart_{block_id}"
+            while_end = f"WhileEnd_{block_id}"
+            
+            graph.add_node(while_start, label="While Loop Start")
+            graph.add_node(while_end, label="While Loop End")
+            
+            graph.add_edge(current_block, while_start)
+            graph.add_edge(while_start, while_end)
+            graph.add_edge(while_end, while_start)  
+            
+            current_block = while_end
+            block_id += 1
+        else:
+            statement_block = f"Statement_{block_id}"
+            graph.add_node(statement_block, label=get_statement_label(statement))
+            graph.add_edge(current_block, statement_block)
+            
+            current_block = statement_block
+            block_id += 1
+
+    return graph, block_id
+
+def draw_graph(graph):
+    labels = nx.get_node_attributes(graph, 'label')
+    pos = nx.nx_agraph.graphviz_layout(graph, prog='dot')
+    nx.draw(graph, pos, labels=labels, with_labels=True, node_size=2000, node_color='white', 
+            font_size=10, font_color='black', font_weight='bold', arrows=True)
+    plt.show()  
+
+def main():
+    java_code = """
+    public class Example {
+
+        public void exampleMethod() {
+            int x = 10;
+            if (x > 5) {
+                x = x + 1;
+            } else {
+                x = x - 1;
+            }
+            for (int i = 0; i < 10; i++) {
+                x = x + i;
+            }
+            while (x < 20) {
+                x = x + 1;
+                System.out.println(x);
+            }
+        }
+
+    }
+    """
+
+    ast = java_to_ast(java_code)
+
+    for path, node in ast.filter(javalang.tree.MethodDeclaration):
+        graph = nx.DiGraph()
+        graph, _ = construct_cfg(node, graph)
+        draw_graph(graph)
+        break
+
+if __name__ == "__main__":
+    main()
+------------------------------------------------------------------------------------------------------------------
+import javalang
+import networkx as nx
+import matplotlib.pyplot as plt
+
+
+def java_to_ast(java_code):
+    tokens = javalang.tokenizer.tokenize(java_code)
+    parser = javalang.parser.Parser(tokens)
+    tree = parser.parse()
+    return tree
+
+def get_node_label(node):
+    if isinstance(node, javalang.tree.VariableDeclarator):
+        initializer = get_node_label(node.initializer) if node.initializer else "None"
+        return f"Variable: {node.name}, Init: {initializer}"
+    elif isinstance(node, javalang.tree.LocalVariableDeclaration):
+        return "Local Variable Decl"
+    elif isinstance(node, javalang.tree.MethodDeclaration):
+        return_type = node.return_type.name if node.return_type else "void"
+        return f"Method: {node.name}, Return Type: {return_type}"
+    elif isinstance(node, javalang.tree.ClassDeclaration):
+        return f"Class: {node.name}"
+    elif isinstance(node, javalang.tree.FormalParameter):
+        param_type = node.type.name if node.type else 'Unknown'
+        return f"Parameter: {node.name}, Type: {param_type}"
+    elif isinstance(node, javalang.tree.Literal):
+        return f"Literal: {node.value}"
+    elif isinstance(node, javalang.tree.BinaryOperation):
+        left_operand = get_node_label(node.operandl) if node.operandl else "None"
+        right_operand = get_node_label(node.operandr) if node.operandr else "None"
+        return f"BinaryOperation({node.operator}, {left_operand}, {right_operand})"
+    elif isinstance(node, javalang.tree.IfStatement):
+        return "If Statement"
+    elif isinstance(node, javalang.tree.ForStatement):
+        return "For Loop"
+    elif isinstance(node, javalang.tree.StatementExpression):
+        return "Statement Expression"
+    else:
+        return str(type(node).__name__)
+
+def visualize_ast(node, graph, parent=None):
+    node_id = str(id(node))
+    label = get_node_label(node)
+    graph.add_node(node_id, label=label)
+
+    if parent:
+        graph.add_edge(parent, node_id, label="AST")
+
+    if isinstance(node, javalang.tree.Node):
+        for child in node.children:
+            if isinstance(child, javalang.tree.Node):
+                visualize_ast(child, graph, node_id)
+            elif isinstance(child, list):
+                for list_item in child:
+                    if isinstance(list_item, javalang.tree.Node):
+                        visualize_ast(list_item, graph, node_id)
+
+
+def get_statement_label(statement):
+    if isinstance(statement, javalang.tree.VariableDeclarator):
+        return f"Variable: {statement.name}"
+    elif isinstance(statement, javalang.tree.BinaryOperation):
+        return f"Binary Operation: {statement.operator}"
+    elif isinstance(statement, javalang.tree.IfStatement):
+        return "If Condition"
+    elif isinstance(statement, javalang.tree.ForStatement):
+        return "For Loop"
+    elif isinstance(statement, javalang.tree.WhileStatement):
+        return "While Loop"
+    elif isinstance(statement, javalang.tree.MethodInvocation):
+        return f"Method Call: {statement.member}"
+    elif isinstance(statement, javalang.tree.Literal):
+        return f"Literal: {statement.value}"
+    elif isinstance(statement, javalang.tree.StatementExpression):
+        return "Statement Expression"
+    else:
+        return type(statement).__name__  
+
+def construct_cfg(method_node, graph, parent=None, block_id=0):
+    block_label = f"Block_{block_id}"
+    graph.add_node(block_label, label=f"Method Start: {method_node.name}")
+    
+    if parent:
+        graph.add_edge(parent, block_label, label="CFG")
+    
+    current_block = block_label
+    block_id += 1
+
+    for statement in method_node.body:
+        if isinstance(statement, javalang.tree.IfStatement):
+            condition_block = f"Condition_{block_id}"
+            true_block = f"TrueBranch_{block_id}"
+            false_block = f"FalseBranch_{block_id}"
+            
+            graph.add_node(condition_block, label=get_statement_label(statement))
+            graph.add_node(true_block, label="True Branch")
+            graph.add_node(false_block, label="False Branch")
+            
+            graph.add_edge(current_block, condition_block, label="CFG")
+            graph.add_edge(condition_block, true_block, label="CFG")
+            graph.add_edge(condition_block, false_block, label="CFG")
+            
+            current_block = condition_block
+            block_id += 1
+        elif isinstance(statement, javalang.tree.ForStatement):
+            loop_start = f"LoopStart_{block_id}"
+            loop_end = f"LoopEnd_{block_id}"
+            
+            graph.add_node(loop_start, label="For Loop Start")
+            graph.add_node(loop_end, label="For Loop End")
+            
+            graph.add_edge(current_block, loop_start, label="CFG")
+            graph.add_edge(loop_start, loop_end, label="CFG")
+            graph.add_edge(loop_end, loop_start, label="CFG")  
+            
+            current_block = loop_end
+            block_id += 1
+        else:
+            statement_block = f"Statement_{block_id}"
+            graph.add_node(statement_block, label=get_statement_label(statement))
+            graph.add_edge(current_block, statement_block, label="CFG")
+            
+            current_block = statement_block
+            block_id += 1
+
+    return graph, block_id
+
+
+def construct_pdg(method_node, graph, block_id=0, data_dependencies=None):
+    if data_dependencies is None:
+        data_dependencies = {}
+
+    block_label = f"S{block_id}_entry"
+    graph.add_node(block_label, label="Entry")
+    block_id += 1
+
+    previous_block = block_label
+
+    for statement in method_node.body:
+        if isinstance(statement, javalang.tree.IfStatement):
+            condition_block = f"P{block_id}_if_condition"
+            graph.add_node(condition_block, label="If Condition")
+            graph.add_edge(previous_block, condition_block, label="PDG")
+            
+            true_block = f"S{block_id}_true"
+            false_block = f"S{block_id}_false"
+            graph.add_node(true_block, label="True Condition")
+            graph.add_node(false_block, label="False Condition")
+
+            graph.add_edge(condition_block, true_block, label="True Branch")
+            graph.add_edge(condition_block, false_block, label="False Branch")
+
+            previous_block = condition_block
+            block_id += 1
+
+        elif isinstance(statement, javalang.tree.ForStatement):
+            loop_block = f"P{block_id}_for_loop"
+            graph.add_node(loop_block, label="For Loop")
+            graph.add_edge(previous_block, loop_block, label="PDG")
+            previous_block = loop_block
+            block_id += 1
+
+        elif isinstance(statement, javalang.tree.LocalVariableDeclaration):
+            for declarator in statement.declarators:
+                var_label = f"S{block_id}_var"
+                graph.add_node(var_label, label=f"{declarator.name} = {declarator.initializer}")
+                graph.add_edge(previous_block, var_label, label="PDG")
+                previous_block = var_label
+                block_id += 1
+
+        elif isinstance(statement, javalang.tree.StatementExpression):
+            if isinstance(statement.expression, javalang.tree.Assignment):
+                var_label = f"S{block_id}_assignment"
+                graph.add_node(var_label, label=f"Assign: {statement.expression.expressionl.member}")
+                graph.add_edge(previous_block, var_label, label="PDG")
+                previous_block = var_label
+                block_id += 1
+
+    return graph
+
+
+def construct_cpg(ast):
+    graph = nx.DiGraph()
+
+    for path, node in ast.filter(javalang.tree.MethodDeclaration):
+        visualize_ast(node, graph) 
+        graph, _ = construct_cfg(node, graph)  
+        graph = construct_pdg(node, graph)  
+        break  
+
+    return graph
+
+
+def draw_cpg(graph):
+    plt.figure(figsize=(12, 8))
+    pos = nx.nx_agraph.graphviz_layout(graph, prog='dot', args='-Grankdir=TB -Gsplines=true -Gnodesep=0.5')
+    labels = nx.get_node_attributes(graph, 'label')
+    nx.draw(graph, pos, labels=labels, with_labels=True, node_size=1000, node_color='lightblue', font_size=8, font_color='black')
+    edge_labels = nx.get_edge_attributes(graph, 'label')
+    nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels)
+    plt.show()
+
+
+java_code = """
+    public class Example {
+
+        public void exampleMethod() {
+            int i = 1;
+            int a = 0;
+            int sum = 0;
+           
+            if(a==10){
+                System.out.println(10);
+            }
+        }
+    }
+    """
+
+ast_tree = java_to_ast(java_code)
+
+cpg = construct_cpg(ast_tree)
+draw_cpg(cpg)
+
+------------------------------------------------------------------------------------------------------------------
+import javalang
+import networkx as nx
+import matplotlib.pyplot as plt
+
+def java_to_ast(java_code):
+    tokens = javalang.tokenizer.tokenize(java_code)
+    parser = javalang.parser.Parser(tokens)
+    tree = parser.parse()
+    return tree
+
+def get_variable_initial_value(declarator):
+    return f"{declarator.initializer.value}" if declarator.initializer else "None"
+
+def get_for_loop_variables(control):
+    declarations = []
+    processed_declarations = set()  
+
+    if control.init:
+        #print("Debugging control.init:", control.init) 
+
+        for init_statement in control.init:
+
+            def process_statement(statement):
+                if isinstance(statement, tuple):
+                    for elem in statement:
+                        process_statement(elem) 
+                elif isinstance(statement, javalang.tree.VariableDeclaration):
+                    
+                    if statement not in processed_declarations:
+                        processed_declarations.add(statement)  
+                        
+                        for declarator in statement.declarators:
+                            
+                            variable_name = declarator.name
+                            
+                            if isinstance(declarator.initializer, javalang.tree.Literal):
+                                initial_value = declarator.initializer.value
+                            else:
+                                initial_value = "unknown"
+                            
+                            declarations.append(f"{variable_name}={initial_value}")
+                else:
+                    statement
+            
+            process_statement(init_statement)
+
+    return ', '.join(declarations) if declarations else "No variables"
+
+
+
+
+def get_loop_iterators_and_terminators(control):
+    iterator_block = []
+    if control.update:
+        for update_statement in control.update:
+            if isinstance(update_statement, javalang.tree.MemberReference):
+                postfix_operators = ''.join(update_statement.postfix_operators) 
+                iterator_block.append(f"{update_statement.member}{postfix_operators}") 
+            elif isinstance(update_statement, javalang.tree.Assignment):
+                iterator_block.append(f"{update_statement.expressionl} = {update_statement.expressionr}")
+            else:
+                iterator_block.append(str(update_statement))
+    return ', '.join(iterator_block) if iterator_block else "No iterators"
+
+def extract_condition_expression(condition):
+    if isinstance(condition, javalang.tree.BinaryOperation):
+        lhs = condition.operandl
+        operator = condition.operator
+        rhs = condition.operandr
+
+        lhs_text = lhs.member if isinstance(lhs, javalang.tree.MemberReference) else lhs.value if isinstance(lhs, javalang.tree.Literal) else str(lhs)
+        rhs_text = rhs.member if isinstance(rhs, javalang.tree.MemberReference) else rhs.value if isinstance(rhs, javalang.tree.Literal) else str(rhs)
+
+        return f"{lhs_text} {operator} {rhs_text}"
+    return "Unknown condition"
+
+def get_loop_condition(control):
+    if control.condition:
+        return extract_condition_expression(control.condition)
+    return "No condition"
+
+def construct_pdg(method_node, graph, block_id=0, data_dependencies=None):
+    if data_dependencies is None:
+        data_dependencies = {}
+
+    block_label = f"S{block_id}_entry"
+    graph.add_node(block_label, label="entry")
+    block_id += 1
+
+    previous_block = block_label
+
+    for statement in method_node.body:
+        if isinstance(statement, javalang.tree.IfStatement):
+            condition_text = extract_condition_expression(statement.condition)
+            condition_block = f"P{block_id}_if_condition"
+            graph.add_node(condition_block, label=f"If ({condition_text})")
+            graph.add_edge(previous_block, condition_block, label="Control")
+            
+            true_block = f"S{block_id}_true"
+            false_block = f"S{block_id}_false"
+            graph.add_node(true_block, label="True Condition")
+            graph.add_node(false_block, label="False Condition")
+
+            graph.add_edge(condition_block, true_block, label="True")
+            graph.add_edge(condition_block, false_block, label="False")
+
+            previous_block = condition_block
+            block_id += 1
+
+        elif isinstance(statement, javalang.tree.ForStatement):
+            loop_variables = get_for_loop_variables(statement.control)
+            loop_block = f"P{block_id}_for_loop"
+            graph.add_node(loop_block, label="For Loop")
+            graph.add_edge(previous_block, loop_block, label="Control")
+
+            if loop_variables:
+                variables_block = f"S{block_id}_loop_variables"
+                graph.add_node(variables_block, label=f"Vars: {loop_variables}")
+                graph.add_edge(loop_block, variables_block, label="Declare Vars")
+                previous_block = variables_block
+
+            loop_condition = get_loop_condition(statement.control)
+            condition_block = f"S{block_id}_loop_condition"
+            graph.add_node(condition_block, label=f"Cond: {loop_condition}")
+            graph.add_edge(previous_block, condition_block, label="Check Cond")
+            previous_block = condition_block
+
+            loop_iterators = get_loop_iterators_and_terminators(statement.control)
+            iterator_block = f"S{block_id}_loop_iterators"
+            graph.add_node(iterator_block, label=f"Iter: {loop_iterators}")  # Showing j++ or similar
+            graph.add_edge(previous_block, iterator_block, label="Update Iter")
+            previous_block = iterator_block
+
+            # Loop body and end of loop (Control Dependency)
+            loop_body_block = f"S{block_id}_loop_body"
+            end_loop_block = f"S{block_id}_end_loop"
+            graph.add_node(loop_body_block, label="Loop Body")
+            graph.add_node(end_loop_block, label="End Loop")
+
+            graph.add_edge(iterator_block, loop_body_block, label="Start Loop")
+            graph.add_edge(loop_body_block, loop_block, label="Repeat Loop")
+            graph.add_edge(loop_block, end_loop_block, label="Exit Loop")
+
+            previous_block = loop_block
+            block_id += 1
+
+        elif isinstance(statement, javalang.tree.LocalVariableDeclaration):
+            for declarator in statement.declarators:
+                var_label = f"S{block_id}_var"
+                initial_value = get_variable_initial_value(declarator)
+                graph.add_node(var_label, label=f"{declarator.name} = {initial_value}")
+                graph.add_edge(previous_block, var_label, label="Control")
+                previous_block = var_label
+
+                if declarator.name not in data_dependencies:
+                    data_dependencies[declarator.name] = var_label
+                else:
+                    graph.add_edge(data_dependencies[declarator.name], var_label, label="Data Dependency")
+                    data_dependencies[declarator.name] = var_label
+                block_id += 1
+
+        elif isinstance(statement, javalang.tree.StatementExpression):
+            if isinstance(statement.expression, javalang.tree.Assignment):
+                var_label = f"S{block_id}_assignment"
+                left_var = statement.expression.expressionl.member
+                right_expr = statement.expression.value
+
+                graph.add_node(var_label, label=f"{left_var} = {right_expr}")
+                graph.add_edge(previous_block, var_label, label="Control")
+                previous_block = var_label
+
+                if left_var not in data_dependencies:
+                    data_dependencies[left_var] = var_label
+                else:
+                    graph.add_edge(data_dependencies[left_var], var_label, label="Data Dependency")
+                    data_dependencies[left_var] = var_label
+
+                block_id += 1
+
+    exit_block = f"S{block_id}_exit"
+    graph.add_node(exit_block, label="exit")
+    graph.add_edge(previous_block, exit_block, label="Control")
+
+    return graph
+
+
+def draw_pdg(graph):
+    plt.figure(figsize=(12, 8))
+    pos = nx.nx_agraph.graphviz_layout(graph, prog='dot', args='-Grankdir=TB -Gsplines=true -Gnodesep=0.5')
+    labels = nx.get_node_attributes(graph, 'label')
+    nx.draw(graph, pos, labels=labels, with_labels=True, node_size=1000, node_color='white', font_size=8, font_color='black')
+    edge_labels = nx.get_edge_attributes(graph, 'label')
+    nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels)
+    plt.show()
+
+def main():
+    java_code = """
+    public class Example {
+
+        public void exampleMethod() {
+            int i = 1;
+            int a = 0;
+            int sum = 0;
+            for(int z=0;z<=5;z++){
+                sum = sum + z;
+            }
+            if(a==10){
+                System.out.println(10);
+            }else if(a<=9){
+                if(a==0){
+                    System.out.println(90);
+                }else{
+                    System.out.println(i);
+                }
+            }else if(a==8){
+                System.out.println(8);
+            }else if(a==7){
+                System.out.println(7);
+            }else{
+                System.out.println(0);
+            }
+            
+            System.out.println(sum);
+        }
+    }
+    """
+
+    ast = java_to_ast(java_code)
+    graph = nx.DiGraph()
+    graph = construct_pdg(ast.types[0].methods[0], graph) 
+    draw_pdg(graph)
+
+if __name__ == "__main__":
+    main()
